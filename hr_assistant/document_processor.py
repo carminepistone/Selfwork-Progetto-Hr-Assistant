@@ -1,4 +1,5 @@
 from openai import OpenAI
+from langchain_text_splitters import CharacterTextSplitter
 import os
 import uuid
 from config import Config
@@ -6,7 +7,6 @@ from config import Config
 class DocumentProcessor:
     @staticmethod
     def extract_info_with_llm(text_preview):
-        """Estrae info anagrafiche una tantum usando OpenAI"""
         client = OpenAI(api_key=Config.OPENAI_API_KEY)
         prompt = f"""Estrai Nome, Email e Telefono da questo incipit di CV. 
         Rispondi ESCLUSIVAMENTE in formato testuale: Nome: ... | Email: ... | Tel: ...
@@ -22,6 +22,12 @@ class DocumentProcessor:
     def process_documents():
         documents, metadatas, ids = [], [], []
 
+        text_splitter = CharacterTextSplitter(
+            separator="\n\n",
+            chunk_size=1000,
+            chunk_overlap=100
+        )
+
         for filename in os.listdir(Config.DOCUMENTS_DIR):
             if filename.endswith(".txt"):
                 with open(os.path.join(Config.DOCUMENTS_DIR, filename), 'r', encoding='utf-8') as f:
@@ -30,11 +36,14 @@ class DocumentProcessor:
                     info_line = DocumentProcessor.extract_info_with_llm(content[:500])
                     
                     
-                    documents.append(content)
-                    metadatas.append({
-                        "source": filename,
-                        "candidate_info": info_line
-                    })
-                    ids.append(str(uuid.uuid4()))
+                    chunks = text_splitter.split_text(content)
+                    
+                    for chunk in chunks:
+                        documents.append(chunk)
+                        metadatas.append({
+                            "source": filename,
+                            "candidate_info": info_line
+                        })
+                        ids.append(str(uuid.uuid4()))
 
         return documents, metadatas, ids
