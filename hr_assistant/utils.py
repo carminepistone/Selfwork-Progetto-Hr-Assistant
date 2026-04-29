@@ -1,23 +1,26 @@
-import ollama
+from openai import OpenAI
 from config import Config
 
 class LLMHelper:
-
     @staticmethod
     def chat(messages):
-        """Gestisce lo streaming da Ollama (Llama 3.1)"""
-        stream = ollama.chat(
+        """Gestisce lo streaming da OpenAI"""
+        client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        stream = client.chat.completions.create(
             model=Config.LLM_MODEL,
             messages=messages,
             stream=True,
         )
         for chunk in stream:
-            yield chunk['message']['content']
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
     @staticmethod
-    async def get_candidate_name(context):
+    def get_candidate_name(context):
         """Estrae il nome con un prompt 'zero-shot' secco"""
-        response = ollama.chat(
+        client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        response = client.chat.completions.create(
             model=Config.LLM_MODEL,
             messages=[
                 {
@@ -30,22 +33,19 @@ class LLMHelper:
                 }
             ],
         )
-        return response['message']['content'].strip()
+        return response.choices[0].message.content.strip()
 
     @staticmethod
     def create_prompt(context, question, candidate_name):
-        """Prompt strutturato per migliorare il ragionamento di Llama 3.1"""
+        """Prompt strutturato per migliorare il ragionamento del modello"""
         return f"""
 ### ISTRUZIONI HR
 Analizza la richiesta dell'utente e confrontala con il profilo del candidato estratto dal database.
-
 ### CONTESTO CANDIDATO
 - **Nome Candidato:** {candidate_name}
 - **Dettagli dal CV:** {context}
-
 ### RICHIESTA UTENTE
 "{question}"
-
 ### REGOLE DI RISPOSTA
 1. Conferma che il profilo di {candidate_name} è stato individuato nel file indicato nel contesto.
 2. Argomenta PERCHÉ è adatto basandoti esclusivamente sul testo del CV fornito.

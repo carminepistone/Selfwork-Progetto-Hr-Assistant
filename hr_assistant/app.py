@@ -63,7 +63,6 @@ async def handle_message(message: cl.Message):
     await response_message.send()
 
     try:
-        # Chiamata unica 
         stream = LLMHelper.chat(messages)
         for chunk in stream:
             await response_message.stream_token(chunk)
