@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import os
+
 import chainlit as cl
 from document_processor import DocumentProcessor
 from database import Database
@@ -9,13 +9,50 @@ from config import Config
 from utils import LLMHelper
 
 
+
+# INIZIALIZZAZIONE DB  SYNC DOCUMENTI 
 db = Database()
-if not os.path.exists("./chroma_db"): 
-    documents, metadatas, ids = DocumentProcessor.process_documents()
-    db.add_documents(documents, metadatas, ids)
+added, updated, removed = DocumentProcessor.process_documents(db)
+print(f"Document sync complete: {added} added, {updated} updated, {removed} removed")
+
+
+#  ACTION CALLBACK
+
+@cl.action_callback("db_stats")
+async def on_db_stats(action: cl.Action):
+    db_info = db.get_stats()
+    response = await LLMHelper.get_db_stats(db_info)
+    await cl.Message(response).send()
+
+
+@cl.action_callback("db_reindex")
+async def on_db_reindex(action: cl.Action):
+    added, updated, removed = DocumentProcessor.process_documents(db)
+    await cl.Message(
+        f"DB reindicizzato. Sync: {added} aggiunti, {updated} aggiornati, {removed} rimossi"
+    ).send()
+
+
+#  CHAT
 
 @cl.on_chat_start
-def start():
+async def start():
+    actions = [
+        cl.Action(
+            name="db_stats",
+            icon="mouse-pointer-click",
+            payload={"value": "db_stats"},
+            label="Statistiche Database",
+        ),
+        cl.Action(
+            name="db_reindex",
+            icon="mouse-pointer-click",
+            payload={"value": "db_reindex"},
+            label="Reindex Database",
+        ),
+    ]
+    await cl.Message(content="Informazioni del sistema:", actions=actions).send()
+
     cl.user_session.set(
         "messages",
         [
@@ -29,32 +66,32 @@ def start():
         ],
     )
 
+
+#   MESSAGGI 
+
 @cl.on_message
 async def handle_message(message: cl.Message):
     user_question = message.content
-    results = db.query(user_question)
 
+    results = db.query(user_question, 3)
     if not results["documents"][0]:
         await cl.Message(content="Nessun candidato trovato.").send()
         return
 
     metadata = results["metadatas"][0][0]
-    candidate_info = metadata.get("candidate_info", "Dati non disponibili")
-    source_file = metadata.get("source", "File sconosciuto")
-    context_text = results["documents"][0][0]
+    filename = metadata.get("source", "File sconosciuto")
 
+    candidate_info = DocumentProcessor.read_first_lines(
+        os.path.join(Config.DOCUMENTS_DIR, filename), 10
+    )
 
-    prompt = f"""
-    Sei un assistente HR. Utilizza i seguenti dettagli per rispondere alla domanda.
-    
-    DETTAGLI ANAGRAFICI: {candidate_info}
-    FILE DI ORIGINE: {source_file}
-    CONTENUTO CV: {context_text}
-    
-    DOMANDA UTENTE: {user_question}
-    
-    Istruzioni: Cita il nome del candidato e i suoi recapiti. Spiega perché è adatto basandoti sul contenuto del CV.
-    """
+    context = (
+        f"CONTESTO: nome file {filename}, "
+        f"paragrafo più significativo: {results['documents'][0][0]}, "
+        f"informazioni candidato: {candidate_info}"
+    )
+
+    prompt = LLMHelper.create_prompt(context, user_question)
 
     messages = cl.user_session.get("messages", [])
     messages.append({"role": "user", "content": prompt})
@@ -65,11 +102,14 @@ async def handle_message(message: cl.Message):
     try:
         stream = LLMHelper.chat(messages)
         for chunk in stream:
-            await response_message.stream_token(chunk)
-
+            await response_message.stream_token(
+                str(chunk.choices[0].delta.content or "")
+            )
         messages.append({"role": "assistant", "content": response_message.content})
         await response_message.update()
     except Exception as e:
-        await cl.Message(content=f"Errore: {str(e)}").send()
+        error_message = f"Errore: {str(e)}"
+        await cl.Message(content=error_message).send()
+        print(error_message)
 
     cl.user_session.set("messages", messages)

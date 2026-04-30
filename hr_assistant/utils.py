@@ -1,55 +1,52 @@
-from openai import OpenAI
 from config import Config
+from openai import OpenAI
+
+client = OpenAI(base_url=Config.AI_API_URL, api_key=Config.AI_API_KEY)
 
 class LLMHelper:
+
     @staticmethod
     def chat(messages):
-        """Gestisce lo streaming da OpenAI"""
-        client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        stream = client.chat.completions.create(
+        return client.chat.completions.create(
             model=Config.LLM_MODEL,
             messages=messages,
-            stream=True,
+            stream=True
         )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
 
     @staticmethod
-    def get_candidate_name(context):
-        """Estrae il nome con un prompt 'zero-shot' secco"""
-        client = OpenAI(api_key=Config.OPENAI_API_KEY)
+    async def get_candidate_name(context):
         response = client.chat.completions.create(
             model=Config.LLM_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Sei un estrattore di dati preciso. Rispondi SOLO con il nome e cognome richiesti, senza introduzioni o spiegazioni."
-                },
-                {
-                    "role": "user",
-                    "content": f"Trova nome e cognome all'inizio di questo CV: {context}",
-                }
-            ],
+            messages=[{
+                "role": "user",
+                "content": f"""Dato il seguente contesto individua il nome e cognome del candidato 
+                e ritorna solo il nome e cognome. Curriculum: {context}"""
+            }]
         )
-        return response.choices[0].message.content.strip()
+        return response.choices[0].message.content
 
     @staticmethod
-    def create_prompt(context, question, candidate_name):
-        """Prompt strutturato per migliorare il ragionamento del modello"""
+    async def get_db_stats(context):
+        response = client.chat.completions.create(
+            model=Config.LLM_MODEL,
+            messages=[{
+                "role": "user",
+                "content": f"""Descrivi in modo sintetico le statistiche del database dei frammenti indicizzati.
+                Includi la percentuale di frammenti per file. Statistiche: {context}"""
+            }]
+        )
+        return response.choices[0].message.content
+
+    @staticmethod
+    def create_prompt(context, question):
         return f"""
-### ISTRUZIONI HR
-Analizza la richiesta dell'utente e confrontala con il profilo del candidato estratto dal database.
-### CONTESTO CANDIDATO
-- **Nome Candidato:** {candidate_name}
-- **Dettagli dal CV:** {context}
-### RICHIESTA UTENTE
-"{question}"
-### REGOLE DI RISPOSTA
-1. Conferma che il profilo di {candidate_name} è stato individuato nel file indicato nel contesto.
-2. Argomenta PERCHÉ è adatto basandoti esclusivamente sul testo del CV fornito.
-3. Se le competenze non corrispondono alla domanda, dichiaralo onestamente.
-4. Non inventare esperienze non scritte nel testo.
-5. Mantieni un tono professionale e sintetico.
-"""
+            Dato il seguente contesto: 
+            [[[
+            {context}
+            ]]].
+            Rispondi alla domanda dell'utente: [[[ {question}]]].
+            Spiega che nel file individuato c'è il profilo più adatto.
+            Argomenta la scelta utilizzando il contenuto del testo individuato nel contesto.
+            Alla fine crea una sezione per i contatti del candidato indicando nome, email e telefono.
+            Dopo la sezione dei contatti indica il nome del file del CV, non nominarlo mai prima.
+        """
