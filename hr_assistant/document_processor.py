@@ -1,16 +1,15 @@
 import os
 import uuid
 import hashlib
-from openai import OpenAI
-from langchain_text_splitters import CharacterTextSplitter
 from config import Config
+from semantic_chunking import SemanticChunking
 
 
 class DocumentProcessor:
 
     @staticmethod
     def read_first_lines(file_path, n_lines=10):
-        """Legge le prime N righe del file (usato per estrarre info candidato)"""
+        """Legge le prime N righe del file"""
         with open(file_path, "r", encoding="utf-8") as file:
             return [line.strip() for line, _ in zip(file, range(n_lines))]
 
@@ -25,7 +24,6 @@ class DocumentProcessor:
 
     @staticmethod
     def get_document_metadata(file_path):
-        """Metadati base: hash, last_modified, source"""
         return {
             "hash": DocumentProcessor.get_file_hash(file_path),
             "last_modified": os.path.getmtime(file_path),
@@ -33,50 +31,26 @@ class DocumentProcessor:
         }
 
     @staticmethod
-    def extract_info_with_llm(text_preview):
-        """Estrae Nome, Email, Telefono dall'incipit del CV tramite LLM"""
-        client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        prompt = f"""Estrai Nome, Email e Telefono da questo incipit di CV.
-        Rispondi ESCLUSIVAMENTE in formato: Nome: ... | Email: ... | Tel: ...
-        Testo: {text_preview}"""
-        response = client.chat.completions.create(
-            model=Config.LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-
-    @staticmethod
     def process_single_document(file_path):
-        """Chunking del documento con LangChain + metadati arricchiti con info LLM"""
         documents, metadatas, ids = [], [], []
 
         with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            txt = f.read()
 
+        sc = SemanticChunking(breakpoint_percentile=70, buffer_size=1)
+        chunks = sc.chunk_text(txt)
         file_metadata = DocumentProcessor.get_document_metadata(file_path)
-        candidate_info = DocumentProcessor.extract_info_with_llm(content[:500])
-
-        text_splitter = CharacterTextSplitter(
-            separator="\n\n",
-            chunk_size=1000,
-            chunk_overlap=100
-        )
-        chunks = text_splitter.split_text(content)
 
         for chunk in chunks:
             if chunk and not chunk.isspace():
                 documents.append(chunk)
-                metadatas.append({
-                    **file_metadata,
-                    "candidate_info": candidate_info
-                })
+                metadatas.append(file_metadata)
                 ids.append(str(uuid.uuid4()))
 
         return documents, metadatas, ids
 
     @staticmethod
     def process_documents(db):
-        """Sync intelligente: aggiunge, aggiorna e rimuove documenti dal DB"""
         current_files = {
             f: DocumentProcessor.get_document_metadata(
                 os.path.join(Config.DOCUMENTS_DIR, f)

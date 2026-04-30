@@ -5,6 +5,7 @@ load_dotenv()
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 
+
 class Config:
     DOCUMENTS_DIR = os.path.join(ROOT_DIR, "resumes")
     PERSISTENT_DIR = os.path.join(ROOT_DIR, "data", "chromadb")
@@ -12,8 +13,10 @@ class Config:
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-ada-002")
     LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-    # Alias richiesti da utils.py
+    EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")
+    MODEL_PATH = os.getenv("MODEL_PATH", "")
+    MODEL_NAME = os.getenv("EMBEDDING_MODEL", "text-embedding-ada-002")
+    
     AI_API_URL = os.getenv("AI_API_URL", "https://api.openai.com/v1")
     AI_API_KEY = os.getenv("AI_API_KEY", os.getenv("OPENAI_API_KEY"))
     OPENAI_KEY = os.getenv("OPENAI_API_KEY") 
