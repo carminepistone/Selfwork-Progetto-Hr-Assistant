@@ -38,15 +38,22 @@ class LLMHelper:
         return response.choices[0].message.content
 
     @staticmethod
-    def create_prompt(context, question):
+    def create_prompt(context, question, candidate_name=None):
         return f"""
-            Dato il seguente contesto: 
-            [[[
-            {context}
-            ]]].
-            Rispondi alla domanda dell'utente: [[[ {question}]]].
-            Spiega che nel file individuato c'è il profilo più adatto.
-            Argomenta la scelta utilizzando il contenuto del testo individuato nel contesto.
-            Alla fine crea una sezione per i contatti del candidato indicando nome, email e telefono.
-            Dopo la sezione dei contatti indica il nome del file del CV, non nominarlo mai prima.
-        """
+    Dato il seguente contesto:
+    [[[
+    {context}
+    ]]]
+
+    CANDIDATO IDENTIFICATO:
+    {candidate_name}
+
+    DOMANDA UTENTE:
+    [[[ {question} ]]]
+
+    ISTRUZIONI:
+    - Spiega perché il candidato è il più adatto
+    - Usa evidenze dal contesto
+    - Alla fine crea sezione contatti (nome, email, telefono)
+    - Inserisci il nome del file CV SOLO alla fine
+    """
