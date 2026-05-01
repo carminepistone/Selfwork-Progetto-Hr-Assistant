@@ -39,6 +39,7 @@ async def on_db_stats(action: cl.Action):
 
     await cl.Message(
         content=response,
+        author="assistant",
         actions=[
             cl.Action(
                 name="db_stats",
@@ -54,7 +55,8 @@ async def on_db_reindex(action: cl.Action):
     added, updated, removed = dp.process_documents(db)
 
     await cl.Message(
-        content=f"Reindex completato: {added} aggiunti, {updated} aggiornati, {removed} rimossi"
+        content=f"Reindex completato: {added} aggiunti, {updated} aggiornati, {removed} rimossi",
+        author="system",
     ).send()
 
 
@@ -62,7 +64,8 @@ async def on_db_reindex(action: cl.Action):
 async def on_db_remove(action: cl.Action):
     db.delete_collection()
     await cl.Message(
-        content="Database completamente rimosso. Eseguire reindex."
+        content="Database completamente rimosso. Eseguire reindex.",
+        author="system",
     ).send()
 
 
@@ -89,7 +92,7 @@ async def start():
         ),
     ]
 
-    await cl.Message(content="Sistema pronto", actions=actions).send()
+    await cl.Message(content="Sistema pronto", author="system", actions=actions).send()
 
     cl.user_session.set(
         "messages",
@@ -137,41 +140,50 @@ async def _handle_upload(files) -> List[str]:
 
 # Messaggi
 
-
 @cl.on_message
 async def handle_message(message: cl.Message):
 
-    # ---- Upload ----
+    # Upload
     if message.elements:
-        await cl.Message(content="Indicizzazione documenti...").send()
-
-        valid_files = [
-            f for f in message.elements
-            if f.name.lower().endswith(tuple(DocumentProcessor.SUPPORTED_EXTENSIONS))
-        ]
+        await cl.Message(
+            content="Indicizzazione documenti...",
+            author="system",         # stato operativo
+        ).send()
 
         if valid_files:
             results = await _handle_upload(valid_files)
-            await cl.Message(content="\n".join(results)).send()
-            await cl.Message(content=f"{len(valid_files)} file caricati").send()
+            await cl.Message(
+                content="\n".join(results),
+                author="system",
+            ).send()
+            await cl.Message(
+                content=f"{len(valid_files)} file caricati",
+                author="system",
+            ).send()
         else:
-            await cl.Message(content="Nessun file valido").send()
-
+            await cl.Message(
+                content="Nessun file valido",
+                author="system",
+            ).send()
         return
+
 
     # Query
     user_question = message.content
     results = db.query(user_question, 3)
 
     if not results or not results.get("documents") or not results["documents"][0]:
-        await cl.Message(content="Nessun risultato").send()
+        await cl.Message(
+            content="Nessun risultato",
+            author="system",
+        ).send()
         return
 
     try:
         metadata = results["metadatas"][0][0]
         filename = metadata.get("source")
     except Exception as e:
-        await cl.Message(content=f"Errore retrieval: {str(e)}").send()
+        await cl.Message(content=f"Errore retrieval: {str(e)}", author="system").send()
         return
 
     # Context
@@ -196,7 +208,7 @@ async def handle_message(message: cl.Message):
     messages = cl.user_session.get("messages", [])
     messages.append({"role": "user", "content": prompt})
 
-    response_message = cl.Message(content="")
+    response_message = cl.Message(content="", author="assistant")
     await response_message.send()
 
     #LLM streaming 
@@ -212,6 +224,6 @@ async def handle_message(message: cl.Message):
         await response_message.update()
 
     except Exception as e:
-        await cl.Message(content=f"Errore LLM: {str(e)}").send()
+        await cl.Message(content=f"Errore LLM: {str(e)}", author="system").send()
 
     cl.user_session.set("messages", messages)
