@@ -3,6 +3,7 @@ import uuid
 import hashlib
 import mimetypes
 import tempfile
+import asyncio
 
 from typing import Tuple, List, Dict, Any
 from zipfile import ZipFile
@@ -34,9 +35,6 @@ class DocumentProcessor:
     def __init__(self):
         self.md_converter = MarkItDown()
 
-
-    # Utility
-
     @staticmethod
     def read_first_lines(file_path: str, n_lines: int = 50) -> List[str]:
         try:
@@ -55,7 +53,6 @@ class DocumentProcessor:
 
     def get_document_metadata(self, file_path: str) -> Dict[str, Any]:
         ext = os.path.splitext(file_path)[1].lower()
-
         return {
             "hash": self.get_file_hash(file_path),
             "last_modified": os.path.getmtime(file_path),
@@ -64,9 +61,6 @@ class DocumentProcessor:
             "mime_type": mimetypes.guess_type(file_path)[0],
             "extension": ext,
         }
-
-
-    # Conversione 
 
     def _convert_to_markdown(self, file_path: str) -> str:
         try:
@@ -80,7 +74,6 @@ class DocumentProcessor:
 
             if not content:
                 print(f"[WARNING] Contenuto vuoto dopo conversione: {file_path}")
-
             else:
                 print(f"[OK] {file_path} → {len(content)} chars")
 
@@ -111,11 +104,10 @@ class DocumentProcessor:
         return content
 
 
-    # Processing
-
-    def process_single_document(
+    async def process_single_document(
         self, file_path: str
     ) -> Tuple[List[str], List[Dict], List[str]]:
+        from utils import LLMHelper
 
         print(f"\n[PROCESSING] {file_path}")
 
@@ -128,7 +120,6 @@ class DocumentProcessor:
             print("[SKIP] Unsupported file")
             return documents, metadatas, ids
 
- 
         if file_type == "archive":
             content = self._process_zip_file(file_path)
 
@@ -149,12 +140,14 @@ class DocumentProcessor:
             print("[SKIP] Documento ignorato (contenuto vuoto)")
             return documents, metadatas, ids
 
-        # Chunking 
+        header_text = "\n".join(content.splitlines()[:50])
+        candidate_name = await LLMHelper.get_candidate_name(header_text)
+        print(f"[CANDIDATE] {candidate_name}")
+
         sc = SemanticChunking(
             breakpoint_percentile=65,
             buffer_size=3,
         )
-
         chunks = sc.chunk_text(content)
 
         print(f"[DEBUG] Chunks: {len(chunks)}")
@@ -164,6 +157,7 @@ class DocumentProcessor:
             return documents, metadatas, ids
 
         metadata = self.get_document_metadata(file_path)
+        metadata["candidate_name"] = candidate_name 
 
         for chunk in chunks:
             if chunk and not chunk.isspace():
@@ -171,15 +165,12 @@ class DocumentProcessor:
                 metadatas.append(metadata)
                 ids.append(str(uuid.uuid4()))
 
-        print(f"[OK] Salvati {len(documents)} chunk")
+        print(f"[OK] Salvati {len(documents)} chunk per '{candidate_name}'")
 
         return documents, metadatas, ids
 
 
-    # Sync DB
-
-    def process_documents(self, db) -> Tuple[int, int, int]:
-
+    async def process_documents(self, db) -> Tuple[int, int, int]:
         print("\n[SCAN DIR]", Config.DOCUMENTS_DIR)
 
         current_files = {
@@ -204,7 +195,7 @@ class DocumentProcessor:
             for filename in files:
                 path = os.path.join(Config.DOCUMENTS_DIR, filename)
 
-                docs, metas, ids = self.process_single_document(path)
+                docs, metas, ids = await self.process_single_document(path)
 
                 if action == "update":
                     db.remove_document_by_source(filename)

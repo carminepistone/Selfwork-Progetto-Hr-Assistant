@@ -2,6 +2,7 @@ import os
 from chromadb.api.types import EmbeddingFunction
 from chromadb.utils import embedding_functions
 import openai
+
 from config import Config
 
 try:
@@ -40,12 +41,14 @@ class CustomEmbeddingFunction(EmbeddingFunction):
         openai.api_key = Config.OPENAI_API_KEY
         self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
             api_key=Config.OPENAI_API_KEY,
-            model_name=self.model_name
+            model_name=self.model_name,
         )
 
     def _setup_local_model(self):
         if SentenceTransformer is None:
-            raise ImportError("Installa sentence-transformers: pip install sentence-transformers")
+            raise ImportError(
+                "Installa sentence-transformers: pip install sentence-transformers"
+            )
         if os.path.exists(self.model_path):
             self.embedding_function = SentenceTransformer(self.model_path)
         else:
